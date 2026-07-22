@@ -1,4 +1,4 @@
-#!/bin/env python3
+#!/usr/bin/env python3
 """
 self_eval.py — BinkBench agent-facing self-evaluation tool.
 

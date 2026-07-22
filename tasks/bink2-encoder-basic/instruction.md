@@ -93,6 +93,10 @@ These clips vary in motion, content type, and scene structure — some contain h
 
 `/app/samples/` contains two categories of clips (`cgi_scene*` and `real_scene*`), each folder numbered in what I judge to be increasing order of complexity within its own category (e.g. `real_scene` is intended to be simpler than `real_scene_2`, which is simpler than `real_scene_3`). Complexity is not necessarily comparable across categories.
 
+## NihAV
+
+You have access to NihAV, specifically access to a reimplementation of the Bink 2 decoder. Note that a Bink 1 encoder is  present, but that may not be relavant to most portions of your work.
+
 ## Notes
 
 If your video does not decode by either `self_eval.py` or `decode_wrapper.sh`, they will note it.

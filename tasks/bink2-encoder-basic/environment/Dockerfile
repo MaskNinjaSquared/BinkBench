@@ -6,7 +6,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
-    ffmpeg \
     python3 \
     python3-pip \
     rustc \
@@ -20,8 +19,17 @@ RUN apt-get update && apt-get install -y \
     libglx0 \
     libglib2.0-0 \
     zlib1g \
+    wget \
+    xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
+# Run for ffmpeg with libvmaf
+RUN wget -q https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -O /tmp/ffmpeg.tar.xz && \
+    mkdir -p /tmp/ffmpeg-extract && \
+    tar xf /tmp/ffmpeg.tar.xz -C /tmp/ffmpeg-extract --strip-components=1 && \
+    mv /tmp/ffmpeg-extract/ffmpeg /usr/local/bin/ffmpeg && \
+    mv /tmp/ffmpeg-extract/ffprobe /usr/local/bin/ffprobe && \
+    rm -rf /tmp/ffmpeg.tar.xz /tmp/ffmpeg-extract
 
 
 # Benchmark scoring and self_eval dependencies
