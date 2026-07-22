@@ -48,7 +48,7 @@ To run this at scale against multiple SOTA models, this requires an inference bu
 - [NihAV](https://nihav.org/) for their implementation of the Bink 2 decoder
 - [RAD Game Tools](https://www.radgametools.com/bnkmain.htm) for creating Bink 2!
 
-##Notes
+## Notes
 
 Please note that BinkBench is still a proof-of-concept, and I haven't been able to test this with models yet. I've tried to make the scripts as robust as possible, but if you find anything, reporting it would be a huge help.
 
