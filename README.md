@@ -37,7 +37,7 @@ pier run -p BinkBench/tasks/bink2-encoder-basic --agent mini-swe-agent --model p
 
 ## Results
 
-Agent scores will be plotted on a graph of VMAF against bits per pixel.
+Agent scores will *in future* be plotted on a graph of VMAF against bits per pixel. Currently, scores are passed as a reward (made up of the geometric mean × efficiency) which also factors in completion of available validation samples. 
 
 To run this at scale against multiple SOTA models, this requires an inference budget I don't have yet. However, if you're interested in running BinkBench against a model and sharing results, or want to help fund a broader run, feel free to reach out to me.
 
