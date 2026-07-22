@@ -39,14 +39,18 @@ pier run -p BinkBench/tasks/bink2-encoder-basic --agent mini-swe-agent --model p
 
 Agent scores will be plotted on a graph of VMAF against bits per pixel.
 
-To run this at scale against multiple SOTA models requires an inference budget I don't have yet. However, if you're interested in running BinkBench against a model and sharing results, or want to help fund a broader run, feel free to reach out to me.
+To run this at scale against multiple SOTA models, this requires an inference budget I don't have yet. However, if you're interested in running BinkBench against a model and sharing results, or want to help fund a broader run, feel free to reach out to me.
 
 ## Credits
 
 - [HikingFex](https://www.hikingfex.com/) for sample videos used in both agent testing and external verification of the encoders
-- [Playground Games] for their cutscenes
+- [Playground Games](https://web.archive.org/web/20250122182716if_/https://playground-games.com/projects/forza-horizon-2/) for their cutscenes
 - [NihAV](https://nihav.org/) for their implementation of the Bink 2 decoder
 - [RAD Game Tools](https://www.radgametools.com/bnkmain.htm) for creating Bink 2!
+
+##Notes
+
+Please note that BinkBench is still a proof-of-concept, and I haven't been able to test this with models yet. I've tried to make the scripts as robust as possible, but if you find anything, reporting it would be a huge help.
 
 ## License
 
