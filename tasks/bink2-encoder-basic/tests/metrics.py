@@ -9,6 +9,7 @@ Harbor's reward.json schema.
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -101,11 +102,30 @@ def compute_psnr_ssim(source_frames, decoded_frames):
     }
 
 
+def first_frame_index(frame_dir: Path) -> int:
+    """Return the lowest frame_NNNNNN index actually present in frame_dir.
+    Frame-naming conventions aren't guaranteed to match between the agent's
+    own source frames and the hooker's decoded output (0-indexed) — detecting
+    the true start index avoids silently misaligning the two streams."""
+    indices = []
+    for p in frame_dir.glob("frame_*.png"):
+        m = re.match(r"frame_(\d+)\.png$", p.name)
+        if m:
+            indices.append(int(m.group(1)))
+    if not indices:
+        raise ValueError(f"No frame_NNNNNN.png files found in {frame_dir}")
+    return min(indices)
+
+
 def compute_vmaf(source_dir: Path, decoded_dir: Path, fps: int, timeout: int):
+    src_start = first_frame_index(source_dir)
+    dec_start = first_frame_index(decoded_dir)
     vmaf_log = Path(tempfile.mktemp(suffix=".json"))
     cmd = [
         FFMPEG, "-y",
+        "-start_number", str(src_start),
         "-framerate", str(fps), "-i", str(source_dir / "frame_%06d.png"),
+        "-start_number", str(dec_start),
         "-framerate", str(fps), "-i", str(decoded_dir / "frame_%06d.png"),
         "-lavfi", f"libvmaf=log_path={vmaf_log}:log_fmt=json",
         "-f", "null", "-",
@@ -117,6 +137,10 @@ def compute_vmaf(source_dir: Path, decoded_dir: Path, fps: int, timeout: int):
         pooled = data.get("pooled_metrics", data.get("pooled", {}))
         vmaf_block = pooled.get("vmaf", {})
         return float(vmaf_block.get("mean", vmaf_block.get("harmonic_mean")))
+    except subprocess.CalledProcessError as e:
+        print(f"[metrics] VMAF ffmpeg call failed (exit {e.returncode}): "
+              f"{e.stderr.decode(errors='replace')}", file=sys.stderr)
+        return None
     except Exception as e:
         print(f"[metrics] VMAF failed, excluding from geomean: {e}", file=sys.stderr)
         return None
@@ -129,6 +153,19 @@ def geomean(psnr, ssim, vmaf):
     if vmaf is None:
         return (psnr_norm * ssim) ** 0.5
     return (psnr_norm * ssim * (vmaf / 100.0)) ** (1.0 / 3.0)
+
+
+def composite_reward(quality_geomean: float, bpp: float, bpp_reference: float = 0.5) -> float:
+    """Harbor's single scalar reward: quality discounted by efficiency, so an
+    encoder can't win by being maximally lossless and enormous. bpp_reference
+    is a placeholder anchor (not yet calibrated against real encoder output)
+    for what counts as a reasonable operating point — revisit once real
+    encoder bpp data is available. mean_quality_geomean and mean_bpp are
+    still reported separately below for future Pareto-front analysis."""
+    if bpp is None or bpp <= 0:
+        return 0.0
+    efficiency = min(bpp_reference / bpp, 1.0)
+    return quality_geomean * efficiency
 
 
 def score_clip(frames_dir: Path, verifier_start_time: float):
@@ -241,8 +278,10 @@ def main():
 
     n_failed = sum(1 for r in results if r.get("decode_failed", True))
 
+    mean_reward = composite_reward(mean_quality_geomean, mean_bpp) if mean_bpp is not None else 0.0
+
     reward = {
-        "reward": round(mean_quality_geomean, 4),
+        "reward": round(mean_reward, 4),
         "mean_quality_geomean": round(mean_quality_geomean, 4),
         "mean_bpp": round(mean_bpp, 5) if mean_bpp is not None else None,
         "mean_compression_ratio": round(mean_compression_ratio, 4) if mean_compression_ratio is not None else None,

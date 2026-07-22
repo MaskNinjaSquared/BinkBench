@@ -13,6 +13,7 @@ import argparse
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -92,22 +93,45 @@ def compute_psnr_ssim(source_frames, decoded_frames):
     }
 
 
-def compute_vmaf(source_dir: Path, decoded_dir: Path, fps: int, n_frames: int):
+def first_frame_index(frame_dir: Path) -> int:
+    """Return the lowest frame_NNNNNN index actually present in frame_dir.
+    Frame-naming conventions aren't guaranteed to match between the agent's
+    own source frames and the hooker's decoded output (0-indexed) — detecting
+    the true start index avoids silently misaligning the two streams."""
+    indices = []
+    for p in frame_dir.glob("frame_*.png"):
+        m = re.match(r"frame_(\d+)\.png$", p.name)
+        if m:
+            indices.append(int(m.group(1)))
+    if not indices:
+        raise ValueError(f"No frame_NNNNNN.png files found in {frame_dir}")
+    return min(indices)
+
+
+def compute_vmaf(source_dir: Path, decoded_dir: Path, fps: int, timeout: int):
+    src_start = first_frame_index(source_dir)
+    dec_start = first_frame_index(decoded_dir)
     vmaf_log = Path(tempfile.mktemp(suffix=".json"))
     cmd = [
         FFMPEG, "-y",
+        "-start_number", str(src_start),
         "-framerate", str(fps), "-i", str(source_dir / "frame_%06d.png"),
+        "-start_number", str(dec_start),
         "-framerate", str(fps), "-i", str(decoded_dir / "frame_%06d.png"),
         "-lavfi", f"libvmaf=log_path={vmaf_log}:log_fmt=json",
         "-f", "null", "-",
     ]
     try:
-        subprocess.run(cmd, capture_output=True, timeout=DECODE_TIMEOUT, check=True)
+        subprocess.run(cmd, capture_output=True, timeout=timeout, check=True)
         with open(vmaf_log) as f:
             data = json.load(f)
         pooled = data.get("pooled_metrics", data.get("pooled", {}))
         vmaf_block = pooled.get("vmaf", {})
         return float(vmaf_block.get("mean", vmaf_block.get("harmonic_mean")))
+    except subprocess.CalledProcessError as e:
+        print(f"[self_eval] VMAF ffmpeg call failed (exit {e.returncode}): "
+              f"{e.stderr.decode(errors='replace')}", file=sys.stderr)
+        return None
     except Exception as e:
         print(f"[self_eval] VMAF failed, excluding from geomean: {e}", file=sys.stderr)
         return None
@@ -167,7 +191,7 @@ def main():
             print(json.dumps({"clip": clip_name, "decode_failed": True, "reason": str(e)}))
             sys.exit(1)
 
-        vmaf = compute_vmaf(frames_dir, decoded_dir, fps, quality["frames_scored"])
+        vmaf = compute_vmaf(frames_dir, decoded_dir, fps, DECODE_TIMEOUT)
 
         encoded_size = out_bk2.stat().st_size
         bpp = (encoded_size * 8) / (width * height * quality["frames_scored"])
