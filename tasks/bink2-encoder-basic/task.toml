@@ -6,7 +6,7 @@ description = "Codec engineering - implement a Bink 2 encoder using only the pro
 authors = [
     { name = "Kyle", email = "MaskNinjaSquared@proton.me" }
 ]
-keywords = ["bink", "video", "encoder", "reverse-engineering"]
+keywords = ["bink", "video", "encoder", "codec engineering"]
 
 [metadata]
 difficulty = "hard"
