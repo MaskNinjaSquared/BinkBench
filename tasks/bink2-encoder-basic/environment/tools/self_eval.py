@@ -27,6 +27,8 @@ from skimage.metrics import structural_similarity as sk_ssim
 ENCODER_PATH = "/output/encoder"
 FFMPEG = os.environ.get("BINKBENCH_FFMPEG", "ffmpeg")
 PSNR_CEILING = 50.0
+# Intentionally half the verifier's per-clip defaults (metrics.py: 1800/360).
+# Keeps single-clip dev iteration fast — an agent should learn "this encode is too slow" in ~15 min here, not ~30. A clip that comfortably fits this budget has 2x headroom at actual grading. This does *not* simulate metrics.py's cross-clip budget-splitting, and this is by design - self_eval is stateless and single-clip, so there's no "shared run" to model.
 ENCODE_TIMEOUT = 900
 DECODE_TIMEOUT = 180
 

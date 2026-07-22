@@ -155,17 +155,24 @@ def geomean(psnr, ssim, vmaf):
     return (psnr_norm * ssim * (vmaf / 100.0)) ** (1.0 / 3.0)
 
 
-def composite_reward(quality_geomean: float, bpp: float, bpp_reference: float = 0.5) -> float:
-    """Harbor's single scalar reward: quality discounted by efficiency, so an
-    encoder can't win by being maximally lossless and enormous. bpp_reference
-    is a placeholder anchor (not yet calibrated against real encoder output)
-    for what counts as a reasonable operating point — revisit once real
-    encoder bpp data is available. mean_quality_geomean and mean_bpp are
-    still reported separately below for future Pareto-front analysis."""
-    if bpp is None or bpp <= 0:
+def composite_reward(quality_geomean: float, bpp: float, clips_successful: int,
+                     clips_total: int, bpp_reference: float = 0.5) -> float:
+    """Harbor's single scalar reward: quality discounted by efficiency, then
+    further discounted by completion rate so partial-failure runs can't earn
+    an inflated reward from a small, lucky, efficient subset of clips.
+    mean_quality_geomean is already zero-filled for failed clips, but mean_bpp
+    is averaged over successful clips only — the completion factor keeps both
+    terms honest by scaling the whole reward by how much of the run actually
+    succeeded. bpp_reference is a placeholder anchor (not yet calibrated
+    against real encoder output) for what counts as a reasonable operating
+    point — revisit once real encoder bpp data is available.
+    mean_quality_geomean and mean_bpp are still reported separately below for
+    future Pareto-front analysis."""
+    if bpp is None or bpp <= 0 or clips_total == 0:
         return 0.0
     efficiency = min(bpp_reference / bpp, 1.0)
-    return quality_geomean * efficiency
+    completion = clips_successful / clips_total
+    return quality_geomean * efficiency * completion
 
 
 def score_clip(frames_dir: Path, verifier_start_time: float):
@@ -278,7 +285,9 @@ def main():
 
     n_failed = sum(1 for r in results if r.get("decode_failed", True))
 
-    mean_reward = composite_reward(mean_quality_geomean, mean_bpp) if mean_bpp is not None else 0.0
+    mean_reward = composite_reward(
+        mean_quality_geomean, mean_bpp, len(successful), len(results)
+    ) if mean_bpp is not None else 0.0
 
     reward = {
         "reward": round(mean_reward, 4),

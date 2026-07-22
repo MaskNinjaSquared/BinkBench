@@ -134,9 +134,24 @@ if [[ "$CROP_H" -eq 0 && -n "$READ_H" && "$READ_H" -gt 0 ]]; then
     CROP_H="$READ_H"
 fi
 
+# Size the virtual X screen to the clip's native decoded resolution so videos
+# larger than 1080p aren't clipped by the X server itself. BinkPlayer renders
+# at native dimensions (READ_W x READ_H); the hooker's crop runs after capture,
+# so the screen must cover the native size, not the (possibly smaller) crop.
+# Fall back to crop dims, then to 1920x1080, when the header was unreadable.
+SCREEN_W="${READ_W:-0}"
+SCREEN_H="${READ_H:-0}"
+if [[ "$SCREEN_W" -le 0 || "$SCREEN_H" -le 0 ]]; then
+    SCREEN_W="${CROP_W:-1920}"
+    SCREEN_H="${CROP_H:-1080}"
+fi
+[[ "$SCREEN_W" -le 0 ]] && SCREEN_W=1920
+[[ "$SCREEN_H" -le 0 ]] && SCREEN_H=1080
+
 echo "[decode_wrapper] Decoding:    $(basename "$BK2_PATH")"
 echo "[decode_wrapper] Output:      $OUTPUT_DIR"
 echo "[decode_wrapper] Resolution:  ${CROP_W}x${CROP_H}"
+echo "[decode_wrapper] Xvfb screen: ${SCREEN_W}x${SCREEN_H}"
 if [[ "$TOTAL_FRAMES" -gt 0 ]]; then
     echo "[decode_wrapper] Frame count: $TOTAL_FRAMES"
     export BINK_MAX_FRAMES="$TOTAL_FRAMES"
@@ -146,7 +161,7 @@ if [[ "$TOTAL_FRAMES" -gt 0 ]]; then
     BINK_DUMP_PNG=1 BINK_DUMP_BMP=0 BINK_DUMP_RAW=0 BINK_DUMP_DIR="$TMP_DIR" \
         BINK_CROP_WIDTH="$CROP_W" BINK_CROP_HEIGHT="$CROP_H" \
         BINK_DEBUG=0 BINK_TRACE=0 BINK_FILTER_WINDOW=0 \
-        LD_PRELOAD="$HOOKER_SO" xvfb-run -a --server-args="-screen 0 1920x1080x24+32" \
+        LD_PRELOAD="$HOOKER_SO" xvfb-run -a --server-args="-screen 0 ${SCREEN_W}x${SCREEN_H}x24+32" \
         "$BINKPLAYER" -l -n -a "$BK2_PATH" >/dev/null 2>&1 &
     PLAYER_PID=$!
 
@@ -169,7 +184,7 @@ else
     BINK_DUMP_PNG=1 BINK_DUMP_BMP=0 BINK_DUMP_RAW=0 BINK_DUMP_DIR="$TMP_DIR" \
         BINK_CROP_WIDTH="$CROP_W" BINK_CROP_HEIGHT="$CROP_H" \
         BINK_DEBUG=0 BINK_TRACE=0 BINK_FILTER_WINDOW=0 \
-        LD_PRELOAD="$HOOKER_SO" xvfb-run -a --server-args="-screen 0 1920x1080x24+32" \
+        LD_PRELOAD="$HOOKER_SO" xvfb-run -a --server-args="-screen 0 ${SCREEN_W}x${SCREEN_H}x24+32" \
         "$BINKPLAYER" -n -a "$BK2_PATH" 2>/dev/null || true
 fi
 
