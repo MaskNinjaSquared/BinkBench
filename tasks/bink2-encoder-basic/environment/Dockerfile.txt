@@ -29,9 +29,7 @@ RUN pip3 install --no-cache-dir \
     numpy \
     opencv-python-headless \
     scikit-image \
-    Pillow \
-    huggingface-hub
-
+    Pillow
 
 
 # Create runtime directories
@@ -48,10 +46,7 @@ RUN mkdir -p \
 COPY nihav/ /app/nihav/
 
 # Download sample material available for iteration
-RUN huggingface-cli download MaskNinja/BinkBenchAssets \
-    --include "samples/*" \
-    --exclude "held-out/*" \
-    --local-dir /tmp/assets && \
+RUN git clone https://huggingface.co/datasets/MaskNinja/BinkBenchAssets /tmp/assets && \
     mv /tmp/assets/samples /app/samples && \
     rm -rf /tmp/assets
 
