@@ -25,7 +25,7 @@ The agents are set up in an environment where they have access to NihAV and tool
 
 ## Running BinkBench
 
-BinkBench requires [Pier](https://github.com/datacurve-ai/pier). To run it:
+BinkBench requires [Pier](https://github.com/datacurve-ai/pier). To run it, try:
 
 ```bash
 git clone https://github.com/MaskNinjaSquared/BinkBench
@@ -37,7 +37,7 @@ pier run -p BinkBench/tasks/bink2-encoder-basic --agent mini-swe-agent --model p
 
 ## Results
 
-Agent scores will *in future* be plotted on a graph of VMAF against bits per pixel. Currently, scores are passed as a reward (made up of the geometric mean × efficiency) which also factors in completion of available validation samples. 
+Agent scores will *in future* be plotted on a graph of VMAF against bits per pixel. Currently, scores are passed as a reward (made up of the geometric mean × efficiency) which also factors in completion of available clips for validation. 
 
 To run this at scale against multiple SOTA models, this requires an inference budget I don't have yet. However, if you're interested in running BinkBench against a model and sharing results, or want to help fund a broader run, feel free to reach out to me.
 
@@ -51,6 +51,8 @@ To run this at scale against multiple SOTA models, this requires an inference bu
 ## Notes
 
 Please note that BinkBench is still a proof-of-concept, and I haven't been able to test this with models yet. I've tried to make the scripts as robust as possible, but if you find anything, reporting it would be a huge help.
+
+Both the sample clips and held-out set are stored on [HuggingFace](https://huggingface.co/datasets/MaskNinja/BinkBenchAssets).
 
 ## License
 
