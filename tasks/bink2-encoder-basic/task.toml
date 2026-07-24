@@ -1,4 +1,4 @@
-schema_version = "1.0"
+schema_version = "1.4"
 
 [task]
 name = "binkbench/bink2-encoder-basic"
@@ -17,13 +17,17 @@ timeout_sec = 604800.0
 
 [verifier]
 timeout_sec = 10800.0
+environment_mode = "separate"
+network_mode = "no-network"
 
 [environment]
 build_timeout_sec = 600.0
-allow_internet = true
+network_mode = "public"
 os = "linux"
 
 cpus = 8
 memory_mb = 8192
 storage_mb = 20480
 gpus = 0
+
+artifacts = ["/output/encoder"]
