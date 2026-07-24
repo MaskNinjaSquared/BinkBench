@@ -8,7 +8,7 @@ This benchmark is based off an idea which originated from [my Blogspot article](
 
 BinkBench is a proof-of-concept benchmark for coding agents based on four open metrics - VMAF (as primary), PSNR and SSIM for measuring video quality, as well as bits per pixel (bpp) for measuring efficiency. The former three metrics can also be comprised into one quality metric (via a geometric mean).
 
-BinkBench is also contamination-resistant, since there are no public Bink 2 encoders available for agents to find. The agent must derive one from the decoder alone, not retrieve a known solution. This also allows us to have internet access on for any research into compression techniques for encoding, because no matter how hard they try, they won't be able to find a reference encoder. It's worth putting here that the most likely way the agent gets access to an encoder is through someone uploading a previous run or the agent navigating to HugginFace, which will get sorted out in the future (or compromising Epic Games).
+BinkBench is also contamination-resistant, since there are no public Bink 2 encoders available for agents to find. The agent must derive one from the decoder alone, not retrieve a known solution. This also allows us to have internet access on for any research into compression techniques for encoding, because no matter how hard they try, they won't be able to find a reference encoder. It's worth putting here that the most likely way the agent gets access to an encoder is through someone uploading a previous run or the agent navigating to HuggingFace, which will get sorted out in the future (or compromising Epic Games).
 
 ## What's different about it?
 
