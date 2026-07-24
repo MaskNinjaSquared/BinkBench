@@ -4,15 +4,23 @@ set -uo pipefail
 REWARD_PATH="/logs/verifier/reward.json"
 mkdir -p "$(dirname "$REWARD_PATH")"
 
-HELD_OUT_BASE="/tmp/BinkBenchAssets"
-if [ ! -d "$HELD_OUT_BASE/held-out" ]; then
-    rm -rf "$HELD_OUT_BASE"
-    mkdir -p "$HELD_OUT_BASE"
-    wget -q https://huggingface.co/datasets/MaskNinja/BinkBenchAssets/resolve/main/held-out.tar.gz -O /tmp/held-out.tar.gz
-    tar xzf /tmp/held-out.tar.gz -C "$HELD_OUT_BASE"
-    rm /tmp/held-out.tar.gz
+# Prefer the held-out clips baked into the verifier image (hermetic grading).
+# Fall back to a runtime download only if the image was built without them, so
+# a standalone metrics.py run still works outside the image.
+HELD_OUT_BAKED="/tests/held-out"
+if [ -d "$HELD_OUT_BAKED" ]; then
+    export HELD_OUT_DIR="$HELD_OUT_BAKED"
+else
+    HELD_OUT_BASE="/tmp/BinkBenchAssets"
+    if [ ! -d "$HELD_OUT_BASE/held-out" ]; then
+        rm -rf "$HELD_OUT_BASE"
+        mkdir -p "$HELD_OUT_BASE"
+        wget -q https://huggingface.co/datasets/MaskNinja/BinkBenchAssets/resolve/main/held-out.tar.gz -O /tmp/held-out.tar.gz
+        tar xzf /tmp/held-out.tar.gz -C "$HELD_OUT_BASE"
+        rm /tmp/held-out.tar.gz
+    fi
+    export HELD_OUT_DIR="$HELD_OUT_BASE/held-out"
 fi
-export HELD_OUT_DIR="$HELD_OUT_BASE/held-out"
 
 python3 /tests/metrics.py
 EXIT_CODE=$?

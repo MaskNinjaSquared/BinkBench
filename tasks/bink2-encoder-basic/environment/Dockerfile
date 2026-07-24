@@ -84,7 +84,7 @@ RUN chmod +x \
 ENV BINKHOOKER_SO="/app/internal/bink_hooker.so"
 ENV DECODE_WRAPPER="/app/tools/decode_wrapper.sh"
 
-ENV LD_LIBRARY_PATH=/app/internal:$LD_LIBRARY_PATH
+ENV LD_LIBRARY_PATH=/app/internal
 
 ENV PATH="/app/tools:$PATH"
 
