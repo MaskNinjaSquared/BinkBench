@@ -7,6 +7,7 @@ Your task is to create a Bink 2 encoder from scratch, using the resources and to
 Your encoder must:
 
 - be able to understand the bitstream format that Bink 2's decoder uses
+- produce output in the **KB2i** bitstream revision (your file's first four bytes must be exactly `KB2i`) — submissions in any other format, including other Bink 2 revisions or Bink 1, are rejected before decoding and score zero
 - be able to support a number of different scenes and support scene changes / keyframe triggering
 - be able to support gradual scene changes
 - support inter-frame prediction (not solely intra-frame / all-keyframe encoding)

@@ -27,6 +27,7 @@ from skimage.metrics import structural_similarity as sk_ssim
 ENCODER_PATH = "/output/encoder"
 FFMPEG = os.environ.get("BINKBENCH_FFMPEG", "ffmpeg")
 PSNR_CEILING = 50.0
+REQUIRED_MAGIC = b"KB2i"
 # Intentionally half the verifier's per-clip defaults (metrics.py: 1800/360).
 # Keeps single-clip dev iteration fast — an agent should learn "this encode is too slow" in ~15 min here, not ~30. A clip that comfortably fits this budget has 2x headroom at actual grading. This does *not* simulate metrics.py's cross-clip budget-splitting, and this is by design - self_eval is stateless and single-clip, so there's no "shared run" to model.
 ENCODE_TIMEOUT = 900
@@ -176,6 +177,16 @@ def main():
 
     if not out_bk2.exists():
         print(json.dumps({"clip": clip_name, "decode_failed": True, "reason": "no_output_file"}))
+        sys.exit(1)
+
+    # Hard allowlist gate, mirroring metrics.py exactly: only the KB2i
+    # revision is a valid submission. Checked before decode so you find out
+    # immediately during iteration, not at grading time.
+    with open(out_bk2, "rb") as f:
+        magic = f.read(4)
+    if magic != REQUIRED_MAGIC:
+        print(json.dumps({"clip": clip_name, "decode_failed": True,
+                          "reason": f"invalid_magic_{magic!r}_expected_{REQUIRED_MAGIC!r}"}))
         sys.exit(1)
 
     with tempfile.TemporaryDirectory(prefix="self_eval_decoded_") as tmp:

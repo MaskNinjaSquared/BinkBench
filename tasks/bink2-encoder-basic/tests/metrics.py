@@ -30,6 +30,7 @@ HELD_OUT_DIR = Path(os.environ.get("HELD_OUT_DIR", "/tests/held-out"))
 REWARD_PATH = Path(os.environ.get("REWARD_PATH", "/logs/verifier/reward.json"))
 
 PSNR_CEILING = 50.0
+REQUIRED_MAGIC = b"KB2i"
 
 # Timeout configurations (in seconds)
 DEFAULT_ENCODE_TIMEOUT = 1800
@@ -201,6 +202,17 @@ def score_clip(frames_dir: Path, verifier_start_time: float):
 
         if not out_bk2.exists():
             return {"clip": clip_name, "decode_failed": True, "reason": "no_output_file"}
+
+        # Hard allowlist gate: the task targets the KB2i revision specifically
+        # (the one revision with no public encoder). Anything else — Bink 1
+        # (BIKx) or another Bink 2 revision — scores zero before any decode
+        # is attempted, since a successful decode of the wrong format is
+        # exactly the false positive this gate exists to prevent.
+        with open(out_bk2, "rb") as f:
+            magic = f.read(4)
+        if magic != REQUIRED_MAGIC:
+            return {"clip": clip_name, "decode_failed": True,
+                    "reason": f"invalid_magic_{magic!r}_expected_{REQUIRED_MAGIC!r}"}
 
         # Calculate remaining budget for decoding
         elapsed = time.time() - verifier_start_time
