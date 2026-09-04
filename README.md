@@ -25,7 +25,7 @@ The agents are set up in an environment where they have access to NihAV and tool
 
 ## Running BinkBench
 
-BinkBench requires Datacurve's [Pier](https://github.com/datacurve-ai/pier). To run it, try:
+BinkBench requires the [Harbour](https://github.com/harbor-framework/harbor) framework. To run it, try:
 
 ```bash
 git clone https://github.com/MaskNinjaSquared/BinkBench
