@@ -29,10 +29,10 @@ BinkBench requires the [Harbour](https://github.com/harbor-framework/harbor) fra
 
 ```bash
 git clone https://github.com/MaskNinjaSquared/BinkBench
-uv tool install datacurve-pier
+uv tool install harbor
 
 export API_KEY=...
-pier run -p BinkBench/tasks/bink2-encoder-basic --agent mini-swe-agent --model provider/model
+harbor run -p BinkBench/tasks/bink2-encoder-basic --agent mini-swe-agent --model provider/model
 ```
 
 ## Results
