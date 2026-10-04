@@ -40,7 +40,7 @@ harbor run -p BinkBench/tasks/binkbench-classic --agent mini-swe-agent --model p
 
 Agent scores will *in future* be plotted on a graph of VMAF against bits per pixel. Currently, scores are passed as a reward (made up of the geometric mean × efficiency) which also factors in completion of available clips for validation. 
 
-To run this at scale against multiple SOTA models, this requires an inference budget I don't have yet. However, if you're interested in running BinkBench against a model and sharing results, feel free to reach out to me.
+Running this at scale against multiple SOTA models requires an inference budget I don't have yet. However, if you're interested in running BinkBench against a model and sharing results, feel free to reach out to me.
 
 ## Credits
 
@@ -54,7 +54,7 @@ To run this at scale against multiple SOTA models, this requires an inference bu
 
 Please note that BinkBench is still a proof-of-concept, and I haven't been able to test this with models yet. I've tried to make the scripts as robust as possible, but if you find anything, reporting it would be a huge help.
 
-The sample clips are genuine KB2i `.bk2` files stored in the repository (via Git LFS) under `tasks/binkbench-classic/environment/samples/`. Agents decode them on demand with `evaluation.py`. The held-out clips are private (see above).
+The sample clips are genuine KB2i `.bk2` files stored in the repository (via Git LFS) under `tasks/binkbench-classic/environment/samples/`. Agents decode them on demand with `evaluation.py`.
 
 ## License
 
