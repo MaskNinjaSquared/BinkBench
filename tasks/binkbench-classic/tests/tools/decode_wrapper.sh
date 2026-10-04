@@ -1,38 +1,63 @@
 #!/bin/bash
+# decode_wrapper.sh - decode a .bk2 to PNG frames via BinkPlayer64 + bink_hooker.so
+#
+# The .bk2 header is the single source of truth for frame count and display
+# resolution. --width/--height, if given, are only ASSERTIONS: the decode
+# fails (exit 2) if the header disagrees. They never override the header.
+#
+# Exit codes:
+#   0  success
+#   1  bad input, unreadable/invalid header, or no frames captured
+#   2  header resolution does not match --width/--height
+#   3  fewer frames captured than the header declares (frames are still saved)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BINKPLAYER="${BINKPLAYER_PATH:-${SCRIPT_DIR}/BinkPlayer64}"
 HOOKER_SO="${BINKHOOKER_SO:-${SCRIPT_DIR}/bink_hooker.so}"
+# Seconds to wait for frames. Keep this below any caller-side subprocess
+# timeout so the cleanup trap gets to run (a SIGKILL from the caller skips it).
+DECODE_TIMEOUT="${BINK_DECODE_TIMEOUT:-300}"
 
 BK2_PATH=""
 OUTPUT_DIR=""
-WIDTH=""
-HEIGHT=""
+EXPECT_W=""
+EXPECT_H=""
 MAX_FRAMES_ARG=""
 PLAYER_PID=""
+TMP_DIR=""
 
 usage() {
     cat <<EOF
 Usage: $0 --bk2 <bk2-file-or-dir> --output <output-dir> [--width <w> --height <h>] [--frames <n>]
 
+  --width/--height   Assert the header's display resolution (never overrides it).
+  --frames           Override the frame count from the header.
+
 Environment:
-  BINKPLAYER_PATH   Path to BinkPlayer64 (default: ./BinkPlayer64)
-  BINKHOOKER_SO     Path to bink_hooker.so (default: ./bink_hooker.so)
-  BINK_MAX_FRAMES   Override expected total frame count
+  BINKPLAYER_PATH       Path to BinkPlayer64 (default: ./BinkPlayer64)
+  BINKHOOKER_SO         Path to bink_hooker.so (default: ./bink_hooker.so)
+  BINK_MAX_FRAMES       Override expected total frame count
+  BINK_DECODE_TIMEOUT   Seconds to wait for frames (default: 300)
 EOF
     exit 1
 }
 
-cleanup() {
+stop_player() {
     if [[ -n "${PLAYER_PID:-}" ]]; then
-        # Recursively kill all child processes spawned under PLAYER_PID (including BinkPlayer64 & Xvfb)
+        # Kill everything spawned under PLAYER_PID (BinkPlayer64 and Xvfb)
         pkill -P "$PLAYER_PID" 2>/dev/null || true
         kill "$PLAYER_PID" 2>/dev/null || true
         sleep 0.1
         pkill -9 -P "$PLAYER_PID" 2>/dev/null || true
         kill -9 "$PLAYER_PID" 2>/dev/null || true
+        wait "$PLAYER_PID" 2>/dev/null || true
+        PLAYER_PID=""
     fi
+}
+
+cleanup() {
+    stop_player
     rm -rf "${TMP_DIR:-}"
 }
 trap cleanup EXIT INT TERM
@@ -41,8 +66,8 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --bk2)                 BK2_PATH="$2"; shift 2 ;;
         --output)              OUTPUT_DIR="$2"; shift 2 ;;
-        --width)               WIDTH="$2"; shift 2 ;;
-        --height)              HEIGHT="$2"; shift 2 ;;
+        --width)               EXPECT_W="$2"; shift 2 ;;
+        --height)              EXPECT_H="$2"; shift 2 ;;
         --frames|--max-frames) MAX_FRAMES_ARG="$2"; shift 2 ;;
         -h|--help)             usage ;;
         *) echo "Unknown argument: $1"; usage ;;
@@ -52,150 +77,141 @@ done
 [[ -z "${BK2_PATH:-}" || -z "${OUTPUT_DIR:-}" ]] && usage
 
 if [[ -d "$BK2_PATH" ]]; then
-    BK2_FILE=$(find "$BK2_PATH" -maxdepth 1 -name "*.bk2" -print -quit)
+    BK2_FILE=$(find "$BK2_PATH" -maxdepth 1 -name "*.bk2" | sort | head -n 1 || true)
     [[ -z "$BK2_FILE" ]] && { echo "[decode_wrapper] ERROR: No .bk2 file found in $BK2_PATH"; exit 1; }
-    BK2_SEARCH_DIR="$BK2_PATH"
     BK2_PATH="$BK2_FILE"
-else
-    BK2_SEARCH_DIR="$(dirname "$BK2_PATH")"
 fi
 
 [[ -f "$BK2_PATH" ]] || { echo "[decode_wrapper] ERROR: $BK2_PATH not found"; exit 1; }
 [[ -x "$BINKPLAYER" ]] || { echo "[decode_wrapper] ERROR: BinkPlayer64 not found at $BINKPLAYER"; exit 1; }
 [[ -f "$HOOKER_SO" ]]  || { echo "[decode_wrapper] ERROR: bink_hooker.so not found at $HOOKER_SO"; exit 1; }
 
-mkdir -p "$OUTPUT_DIR"
-TMP_DIR=$(mktemp -d)
+# ---- Header: single source of truth --------------------------------------
+# Layout: 0 magic | 4 file size | 8 frames | 12 largest frame | 16 frames | 20 width | 24 height
+HDR_INFO=$(python3 - "$BK2_PATH" <<'PY' 2>/dev/null || echo "ERR python_failed"
+import struct, sys
+try:
+    with open(sys.argv[1], "rb") as f:
+        h = f.read(28)
+    if len(h) < 28:
+        print("ERR header_truncated")
+        sys.exit(0)
+    magic = h[:4]
+    ok = magic in (b"BIKb", b"BIKi") or (b"KB2a" <= magic <= b"KB2k")
+    if not ok:
+        print("ERR unrecognized_magic_%s" % magic.hex())
+        sys.exit(0)
+    frames = struct.unpack_from("<I", h, 8)[0]
+    w, hgt = struct.unpack_from("<2I", h, 20)
+    if frames <= 0 or w <= 0 or hgt <= 0:
+        print("ERR zero_field_frames=%d_size=%dx%d" % (frames, w, hgt))
+        sys.exit(0)
+    print("OK %d %d %d %s" % (frames, w, hgt, magic.decode("latin-1")))
+except Exception as e:
+    print("ERR %s" % e)
+PY
+)
 
-TOTAL_FRAMES=0
-CROP_W="${WIDTH:-0}"
-CROP_H="${HEIGHT:-0}"
+read -r HDR_STATUS HDR_REST <<<"$HDR_INFO"
+if [[ "$HDR_STATUS" != "OK" ]]; then
+    echo "[decode_wrapper] ERROR: no valid Bink header in $(basename "$BK2_PATH"): ${HDR_REST:-unknown}"
+    exit 1
+fi
+read -r HDR_FRAMES HDR_W HDR_H HDR_MAGIC <<<"$HDR_REST"
 
+if { [[ -n "$EXPECT_W" && "$EXPECT_W" != "$HDR_W" ]]; } || { [[ -n "$EXPECT_H" && "$EXPECT_H" != "$HDR_H" ]]; }; then
+    echo "[decode_wrapper] ERROR: header declares ${HDR_W}x${HDR_H}, expected ${EXPECT_W:-?}x${EXPECT_H:-?}"
+    exit 2
+fi
+
+TOTAL_FRAMES="$HDR_FRAMES"
 if [[ -n "${MAX_FRAMES_ARG:-}" && "$MAX_FRAMES_ARG" -gt 0 ]]; then
     TOTAL_FRAMES="$MAX_FRAMES_ARG"
 elif [[ -n "${BINK_MAX_FRAMES:-}" && "$BINK_MAX_FRAMES" -gt 0 ]]; then
     TOTAL_FRAMES="$BINK_MAX_FRAMES"
 fi
 
-DEMUX_INFO=$(python3 -c '
-import struct, json, sys, os
+mkdir -p "$OUTPUT_DIR"
+TMP_DIR=$(mktemp -d)
 
-bk2_path = sys.argv[1]
-search_dir = sys.argv[2]
-
-frames = 0
-width = 0
-height = 0
-
-meta_path = os.path.join(search_dir, "meta.json")
-if os.path.isfile(meta_path):
-    try:
-        with open(meta_path) as f:
-            d = json.load(f)
-            frames = d.get("frame_count") or d.get("frames") or d.get("num_frames") or 0
-            width = d.get("width") or 0
-            height = d.get("height") or 0
-    except Exception:
-        pass
-
-if frames <= 0 or width <= 0 or height <= 0:
-    try:
-        with open(bk2_path, "rb") as f:
-            header = f.read(36)
-            if len(header) >= 36:
-                magic = header[0:4]
-                tag = struct.unpack(">I", magic)[0]
-                is_bink1 = magic in (b"BIKb", b"BIKi")
-                is_bink2 = struct.unpack(">I", b"KB2a")[0] <= tag <= struct.unpack(">I", b"KB2k")[0]
-                if is_bink1 or is_bink2:
-                    hdr_frames, _, _, hdr_w, hdr_h = struct.unpack_from("<5I", header, offset=8)
-                    if frames <= 0: frames = hdr_frames
-                    if width <= 0: width = hdr_w
-                    if height <= 0: height = hdr_h
-    except Exception:
-        pass
-
-print(f"{frames} {width} {height}")
-' "$BK2_PATH" "$BK2_SEARCH_DIR" 2>/dev/null || echo "0 0 0")
-
-READ_FRAMES=$(echo "$DEMUX_INFO" | awk '{print $1}')
-READ_W=$(echo "$DEMUX_INFO" | awk '{print $2}')
-READ_H=$(echo "$DEMUX_INFO" | awk '{print $3}')
-
-if [[ "$TOTAL_FRAMES" -eq 0 && -n "$READ_FRAMES" && "$READ_FRAMES" -gt 0 ]]; then
-    TOTAL_FRAMES="$READ_FRAMES"
-fi
-
-if [[ "$CROP_W" -eq 0 && -n "$READ_W" && "$READ_W" -gt 0 ]]; then
-    CROP_W="$READ_W"
-fi
-
-if [[ "$CROP_H" -eq 0 && -n "$READ_H" && "$READ_H" -gt 0 ]]; then
-    CROP_H="$READ_H"
-fi
-
-# Size the virtual X screen to the clip's native decoded resolution so videos
-# larger than 1080p aren't clipped by the X server itself. BinkPlayer renders
-# at native dimensions (READ_W x READ_H); the hooker's crop runs after capture,
-# so the screen must cover the native size, not the (possibly smaller) crop.
-# Fall back to crop dims, then to 1920x1080, when the header was unreadable.
-SCREEN_W="${READ_W:-0}"
-SCREEN_H="${READ_H:-0}"
-if [[ "$SCREEN_W" -le 0 || "$SCREEN_H" -le 0 ]]; then
-    SCREEN_W="${CROP_W:-1920}"
-    SCREEN_H="${CROP_H:-1080}"
-fi
-[[ "$SCREEN_W" -le 0 ]] && SCREEN_W=1920
-[[ "$SCREEN_H" -le 0 ]] && SCREEN_H=1080
-
-echo "[decode_wrapper] Decoding:    $(basename "$BK2_PATH")"
+echo "[decode_wrapper] Decoding:    $(basename "$BK2_PATH") ($HDR_MAGIC)"
 echo "[decode_wrapper] Output:      $OUTPUT_DIR"
-echo "[decode_wrapper] Resolution:  ${CROP_W}x${CROP_H}"
-echo "[decode_wrapper] Xvfb screen: ${SCREEN_W}x${SCREEN_H}"
-if [[ "$TOTAL_FRAMES" -gt 0 ]]; then
-    echo "[decode_wrapper] Frame count: $TOTAL_FRAMES"
-    export BINK_MAX_FRAMES="$TOTAL_FRAMES"
-fi
+echo "[decode_wrapper] Resolution:  ${HDR_W}x${HDR_H} (from header)"
+echo "[decode_wrapper] Frame count: $TOTAL_FRAMES"
+export BINK_MAX_FRAMES="$TOTAL_FRAMES"
 
-if [[ "$TOTAL_FRAMES" -gt 0 ]]; then
-    BINK_DUMP_PNG=1 BINK_DUMP_BMP=0 BINK_DUMP_RAW=0 BINK_DUMP_DIR="$TMP_DIR" \
-        BINK_CROP_WIDTH="$CROP_W" BINK_CROP_HEIGHT="$CROP_H" \
-        BINK_DEBUG=0 BINK_TRACE=0 BINK_FILTER_WINDOW=0 \
-        LD_PRELOAD="$HOOKER_SO" xvfb-run -a --server-args="-screen 0 ${SCREEN_W}x${SCREEN_H}x24+32" \
-        "$BINKPLAYER" -l -n -a "$BK2_PATH" >/dev/null 2>&1 &
-    PLAYER_PID=$!
+# The virtual screen must cover the native decoded size; the hooker crops
+# (top-left) from the native buffer down to the header's display size.
+BINK_DUMP_PNG=1 BINK_DUMP_BMP=0 BINK_DUMP_RAW=0 BINK_DUMP_DIR="$TMP_DIR" \
+    BINK_CROP_WIDTH="$HDR_W" BINK_CROP_HEIGHT="$HDR_H" \
+    BINK_DEBUG=0 BINK_TRACE=0 BINK_FILTER_WINDOW=0 \
+    LD_PRELOAD="$HOOKER_SO" xvfb-run -a --server-args="-screen 0 ${HDR_W}x${HDR_H}x24+32" \
+    "$BINKPLAYER" -l -n -a "$BK2_PATH" >/dev/null 2>&1 &
+PLAYER_PID=$!
 
-    MAX_WAIT=600
-    ELAPSED=0
-    while kill -0 "$PLAYER_PID" 2>/dev/null; do
-        shopt -s nullglob
-        frames=("$TMP_DIR"/*.png)
-        if [[ ${#frames[@]} -ge "$TOTAL_FRAMES" ]]; then
-            break
+count_pngs() {
+    find "$TMP_DIR" -maxdepth 1 -name '*.png' | wc -l
+}
+
+# The hooker writes PNGs in place (no temp file + rename), so a file can exist
+# while still being written. Wait until total PNG size stops changing.
+wait_for_stable_files() {
+    local prev="" cur same=0 i
+    for i in $(seq 1 100); do
+        cur=$(find "$TMP_DIR" -maxdepth 1 -name '*.png' -printf '%s\n' | awk '{s+=$1} END{print s+0}')
+        if [[ "$cur" == "$prev" ]]; then
+            same=$((same + 1))
+        else
+            same=0
         fi
-        sleep 0.1
-        ELAPSED=$((ELAPSED + 1))
-        if [[ $ELAPSED -ge $((MAX_WAIT * 10)) ]]; then
-            echo "[decode_wrapper] WARNING: Timed out waiting for frames."
-            break
+        if [[ $same -ge 2 ]]; then
+            return 0
         fi
+        prev="$cur"
+        sleep 0.3
     done
-else
-    BINK_DUMP_PNG=1 BINK_DUMP_BMP=0 BINK_DUMP_RAW=0 BINK_DUMP_DIR="$TMP_DIR" \
-        BINK_CROP_WIDTH="$CROP_W" BINK_CROP_HEIGHT="$CROP_H" \
-        BINK_DEBUG=0 BINK_TRACE=0 BINK_FILTER_WINDOW=0 \
-        LD_PRELOAD="$HOOKER_SO" xvfb-run -a --server-args="-screen 0 ${SCREEN_W}x${SCREEN_H}x24+32" \
-        "$BINKPLAYER" -n -a "$BK2_PATH" 2>/dev/null || true
-fi
+    return 0
+}
 
-shopt -s nullglob
-frames=("$TMP_DIR"/*.png)
-if [[ ${#frames[@]} -eq 0 ]]; then
+MAX_ITERS=$((DECODE_TIMEOUT * 10))
+ITER=0
+while kill -0 "$PLAYER_PID" 2>/dev/null; do
+    if [[ $(count_pngs) -ge "$TOTAL_FRAMES" ]]; then
+        break
+    fi
+    sleep 0.1
+    ITER=$((ITER + 1))
+    if [[ $ITER -ge $MAX_ITERS ]]; then
+        echo "[decode_wrapper] WARNING: timed out after ${DECODE_TIMEOUT}s waiting for frames."
+        break
+    fi
+done
+
+# Let the last PNG finish, then stop the player so nothing writes while we move files.
+wait_for_stable_files
+stop_player
+
+mapfile -t ALL_FRAMES < <(find "$TMP_DIR" -maxdepth 1 -name '*.png' | sort)
+N_CAPTURED=${#ALL_FRAMES[@]}
+if [[ $N_CAPTURED -eq 0 ]]; then
     echo "[decode_wrapper] ERROR: No frames captured. Decode failed."
     exit 1
 fi
 
-mv "$TMP_DIR"/*.png "$OUTPUT_DIR/" 2>/dev/null || true
+# -l can let the player run past the last frame before we stop it; keep exactly
+# the declared number so callers can compare frame counts strictly.
+if [[ $N_CAPTURED -gt $TOTAL_FRAMES ]]; then
+    for f in "${ALL_FRAMES[@]:$TOTAL_FRAMES}"; do
+        rm -f "$f" "${f%.png}.meta" "$f.meta"
+    done
+    N_CAPTURED=$TOTAL_FRAMES
+fi
+
+mv "$TMP_DIR"/*.png "$OUTPUT_DIR/"
 mv "$TMP_DIR"/*.meta "$OUTPUT_DIR/" 2>/dev/null || true
 
-echo "[decode_wrapper] Successfully saved ${#frames[@]} frames to $OUTPUT_DIR"
+echo "[decode_wrapper] Successfully saved ${N_CAPTURED} frames to $OUTPUT_DIR"
+if [[ $N_CAPTURED -lt $TOTAL_FRAMES ]]; then
+    echo "[decode_wrapper] ERROR: captured ${N_CAPTURED} of ${TOTAL_FRAMES} frames declared by the header."
+    exit 3
+fi

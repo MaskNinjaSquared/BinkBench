@@ -4,37 +4,20 @@ set -uo pipefail
 REWARD_PATH="/logs/verifier/reward.json"
 mkdir -p "$(dirname "$REWARD_PATH")"
 
-# Prefer the held-out clips baked into the verifier image (hermetic grading).
-# Fall back to a runtime download only if the image was built without them, so
-# a standalone metrics.py run still works outside the image.
-HELD_OUT_BAKED="/tests/held-out"
-if [ -d "$HELD_OUT_BAKED" ]; then
-    export HELD_OUT_DIR="$HELD_OUT_BAKED"
-else
-    HELD_OUT_BASE="/tmp/BinkBenchAssets"
-    if [ ! -d "$HELD_OUT_BASE/held-out" ]; then
-        rm -rf "$HELD_OUT_BASE"
-        mkdir -p "$HELD_OUT_BASE"
-        wget -q https://huggingface.co/datasets/MaskNinja/BinkBenchAssets/resolve/main/held-out.tar.gz -O /tmp/held-out.tar.gz
-        tar xzf /tmp/held-out.tar.gz -C "$HELD_OUT_BASE"
-        rm /tmp/held-out.tar.gz
-    fi
-    export HELD_OUT_DIR="$HELD_OUT_BASE/held-out"
-fi
+# Held-out clips are .bk2 files baked into the verifier image (hermetic:
+# nothing is downloaded at grading time).
+export HELD_OUT_DIR="${HELD_OUT_DIR:-/tests/held-out}"
 
-python3 /tests/metrics.py
+# Artifact transfer may not preserve the executable bit.
+chmod +x /output/encoder 2>/dev/null || true
+
+python3 /tests/evaluation.py --held-out "$HELD_OUT_DIR"
 EXIT_CODE=$?
 
+# reward.json must hold numbers only (Harbor); the full report is report.json.
 if [ ! -f "$REWARD_PATH" ]; then
-    echo "[test.sh] metrics.py did not produce $REWARD_PATH — writing zero-reward fallback" >&2
-    cat > "$REWARD_PATH" <<EOF
-{
-  "reward": 0.0,
-  "error": "metrics.py_crashed_or_produced_no_reward_file",
-  "exit_code": $EXIT_CODE,
-  "clips": []
-}
-EOF
+    echo "[test.sh] evaluation.py did not produce $REWARD_PATH (exit $EXIT_CODE) - writing zero-reward fallback" >&2
+    echo '{"reward": 0.0}' > "$REWARD_PATH"
 fi
 
 exit 0

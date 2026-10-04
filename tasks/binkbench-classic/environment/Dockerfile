@@ -1,3 +1,5 @@
+# Agent image for BinkBench
+
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -23,22 +25,31 @@ RUN apt-get update && apt-get install -y \
     xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Run for ffmpeg with libvmaf
-RUN wget -q https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -O /tmp/ffmpeg.tar.xz && \
-    mkdir -p /tmp/ffmpeg-extract && \
+# Copy and extract local pinned ffmpeg 7.0.2 static build
+COPY tools/ffmpeg-7.0.2-amd64-static.tar.xz /tmp/ffmpeg.tar.xz
+RUN mkdir -p /tmp/ffmpeg-extract && \
     tar xf /tmp/ffmpeg.tar.xz -C /tmp/ffmpeg-extract --strip-components=1 && \
     mv /tmp/ffmpeg-extract/ffmpeg /usr/local/bin/ffmpeg && \
     mv /tmp/ffmpeg-extract/ffprobe /usr/local/bin/ffprobe && \
     rm -rf /tmp/ffmpeg.tar.xz /tmp/ffmpeg-extract
 
+# Fail the build now if this ffmpeg has no working libvmaf (the evaluation.py
+# filter string, run end to end), instead of silently mis-scoring later.
+RUN ffmpeg -hide_banner -loglevel error \
+      -f lavfi -i testsrc=d=1:s=320x240:r=30 \
+      -f lavfi -i testsrc=d=1:s=320x240:r=30 \
+      -lavfi "libvmaf=model=version=vmaf_v0.6.1:n_threads=2:log_path=/tmp/vmaf_check.json:log_fmt=json" \
+      -f null - && \
+    grep -q '"pooled_metrics"' /tmp/vmaf_check.json && \
+    rm -f /tmp/vmaf_check.json
 
-# Benchmark scoring and self_eval dependencies
+
+# Benchmark scoring (evaluation.py) dependencies
 RUN pip3 install --no-cache-dir \
     numpy \
     opencv-python-headless \
     scikit-image \
-    Pillow \
-    "huggingface_hub[cli]"
+    Pillow
 
 
 # Create runtime directories
@@ -54,14 +65,18 @@ RUN mkdir -p \
 # Decoder reference implementation (source only)
 COPY nihav/ /app/nihav/
 
-# Download sample material available for iteration
-RUN wget -q https://huggingface.co/datasets/MaskNinja/BinkBenchAssets/resolve/main/samples.tar.gz -O /tmp/samples.tar.gz && \
-    tar xzf /tmp/samples.tar.gz -C /app/ && \
-    rm /tmp/samples.tar.gz
+# Sample material for iteration: genuine KB2i .bk2 files (cgi/, real/).
+# evaluation.py decodes them to PNG frames on demand with decode_wrapper.sh.
+COPY samples/bk2_samples/ /app/samples/
+
+# Fail the build if any sample is not KB2i (a KB2g/KB2n file decodes differently)
+RUN for f in $(find /app/samples -name '*.bk2'); do \
+      [ "$(head -c4 "$f")" = "KB2i" ] || { echo "non-KB2i sample: $f"; exit 1; }; \
+    done
 
 
 # Internal oracle
-# Agents interact only through decode_wrapper.sh/self_eval.py
+# Agents interact only through decode_wrapper.sh/evaluation.py
 
 COPY tools/BinkPlayer64 /app/internal/BinkPlayer64
 COPY tools/bink_hooker.so /app/internal/bink_hooker.so
@@ -71,11 +86,14 @@ RUN chmod +x /app/internal/BinkPlayer64
 
 # Benchmark interface
 
-COPY tools/self_eval.py /app/tools/self_eval.py
+COPY tools/evaluation.py /app/tools/evaluation.py
 COPY tools/decode_wrapper.sh /app/tools/decode_wrapper.sh
 
+# Windows checkouts can leave CRLF line endings; a CRLF shebang cannot execute on Linux.
+RUN sed -i 's/\r$//' /app/tools/decode_wrapper.sh /app/tools/evaluation.py
+
 RUN chmod +x \
-    /app/tools/self_eval.py \
+    /app/tools/evaluation.py \
     /app/tools/decode_wrapper.sh
 
 

@@ -1,7 +1,13 @@
 schema_version = "1.4"
 
+# Top level (above every table header). Under [environment] this would be read as
+# environment.artifacts and not ferried to the verifier. The whole /output
+# directory is carried across, so the encoder can ship config, data files and
+# libraries alongside itself.
+artifacts = ["/output"]
+
 [task]
-name = "binkbench/bink2-encoder-basic"
+name = "binkbench/binkbench-classic"
 description = "Codec engineering - implement a Bink 2 encoder using only the provided decoder."
 authors = [
     { name = "Kyle", email = "MaskNinjaSquared@proton.me" }
@@ -16,7 +22,9 @@ category = "codec-engineering"
 timeout_sec = 604800.0
 
 [verifier]
-timeout_sec = 10800.0
+# evaluation.py budgets 10800s internally (VERIFIER_TIMEOUT_SEC). This limit sits
+# above that so it always gets to write reward.json before Harbor could kill it.
+timeout_sec = 11400.0
 environment_mode = "separate"
 network_mode = "no-network"
 
@@ -27,12 +35,11 @@ memory_mb = 4096
 storage_mb = 20480
 
 [environment]
-build_timeout_sec = 600.0
+# Cold build installs rust/cargo/golang/cmake and copies the sample .bk2 files.
+build_timeout_sec = 1800.0
 network_mode = "public"
 os = "linux"
 cpus = 8
 memory_mb = 8192
 storage_mb = 20480
 gpus = 0
-
-artifacts = ["/output/encoder"]

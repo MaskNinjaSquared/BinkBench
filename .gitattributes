@@ -1,0 +1,12 @@
+# Normalize all text files to LF in the repo AND on checkout (even on
+# Windows), so Docker builds and Linux shell scripts never see CRLF.
+* text=auto eol=lf
+
+# Explicit binaries -- never normalize.
+*.bk2 binary
+*.so binary
+*.exe binary
+*.dll binary
+*.pyc binary
+*.png binary
+*.ttf binary

@@ -8,7 +8,7 @@ This benchmark is based off an idea which originated from [my Blogspot article](
 
 BinkBench is a proof-of-concept benchmark for coding agents based on four open metrics - VMAF (as primary), PSNR and SSIM for measuring video quality, as well as bits per pixel (bpp) for measuring efficiency. The former three metrics can also be comprised into one quality metric (via a geometric mean).
 
-BinkBench is also contamination-resistant, since there are no public Bink 2 encoders available for agents to find. The agent must derive one from the decoder alone, not retrieve a known solution. This also allows us to have internet access on for any research into compression techniques for encoding, because no matter how hard they try, they won't be able to find a reference encoder. It's worth putting here that the most likely way the agent gets access to an encoder is through someone uploading a previous run or the agent navigating to HuggingFace, which will get sorted out in the future (or compromising Epic Games).
+BinkBench is also contamination-resistant, since there is no public encoder for the KB2i revision of Bink 2 for agents to find. The agent must derive one from the decoder alone, not retrieve a known solution. This also allows us to have internet access on for any research into compression techniques for encoding, because no matter how hard they try, they won't be able to find a reference encoder. It's worth putting here that the most likely way the agent gets access to an encoder is through someone uploading a previous run or the agent navigating to HuggingFace, which will get sorted out in the future (or compromising Epic Games).
 
 ## What's different about it?
 
@@ -25,15 +25,16 @@ The agents are set up in an environment where they have access to NihAV and tool
 
 ## Running BinkBench
 
-BinkBench requires the [Harbour](https://github.com/harbor-framework/harbor) framework. To run it, try:
+BinkBench requires the [Harbor](https://github.com/harbor-framework/harbor) framework. To run it, try:
 
 ```bash
 git clone https://github.com/MaskNinjaSquared/BinkBench
 uv tool install harbor
 
 export API_KEY=...
-harbor run -p BinkBench/tasks/bink2-encoder-basic --agent mini-swe-agent --model provider/model
+harbor run -p BinkBench/tasks/binkbench-classic --agent mini-swe-agent --model provider/model
 ```
+
 
 ## Results
 
@@ -46,13 +47,14 @@ To run this at scale against multiple SOTA models, this requires an inference bu
 - [HikingFex](https://www.hikingfex.com/) for sample videos used in both agent testing and external verification of the encoders
 - [Playground Games](https://web.archive.org/web/20250122182716if_/https://playground-games.com/projects/forza-horizon-2/) for their cutscenes
 - [NihAV](https://nihav.org/) for their implementation of the Bink 2 decoder
+- [FFmpeg](https://ffmpeg.org/) and [John Van Sickle](https://johnvansickle.com/ffmpeg/) for the static ffmpeg 7.0.2 build (GPLv3, redistributed unmodified in `tools/`), and [Netflix VMAF](https://github.com/Netflix/vmaf) (libvmaf) for the VMAF metric
 - [RAD Game Tools](https://www.radgametools.com/bnkmain.htm) for creating Bink 2!
 
 ## Notes
 
 Please note that BinkBench is still a proof-of-concept, and I haven't been able to test this with models yet. I've tried to make the scripts as robust as possible, but if you find anything, reporting it would be a huge help.
 
-Both the sample clips and held-out set are stored on [HuggingFace](https://huggingface.co/datasets/MaskNinja/BinkBenchAssets).
+The sample clips are genuine KB2i `.bk2` files stored in the repository (via Git LFS) under `tasks/binkbench-classic/environment/samples/`. Agents decode them on demand with `evaluation.py`. The held-out clips are private (see above).
 
 ## License
 
